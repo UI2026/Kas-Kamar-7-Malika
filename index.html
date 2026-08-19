@@ -11,6 +11,55 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
+    <!-- Firebase SDKs for Real-time Cloud Storage -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase handles
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.isFirebaseReady = false;
+
+        const initFirebase = async () => {
+            try {
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    const firebaseConfig = JSON.parse(__firebase_config);
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                    
+                    window.firebaseApp = initializeApp(firebaseConfig);
+                    window.db = getFirestore(window.firebaseApp);
+                    window.auth = getAuth(window.firebaseApp);
+
+                    // Authenticate
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(window.auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(window.auth);
+                    }
+
+                    window.isFirebaseReady = true;
+                    console.log("Firebase initialized successfully for App ID:", appId);
+                    
+                    // Trigger initial sync / load from cloud
+                    if (window.setupCloudListeners) {
+                        window.setupCloudListeners();
+                    }
+                }
+            } catch (e) {
+                console.error("Firebase init error, fallback to local storage:", e);
+                window.isFirebaseReady = false;
+            }
+        };
+
+        window.onload = () => {
+            initFirebase();
+            if (window.initializeAppUI) window.initializeAppUI();
+        };
+    </script>
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -90,7 +139,7 @@
             </button>
         </div>
         <div class="p-4 text-xs text-center text-gray-400 border-t">
-            Versi 1.0 &copy; 2026
+            Realtime Cloud Versi 2.0
         </div>
     </aside>
 
@@ -112,8 +161,8 @@
                 <h1 class="text-lg font-bold">Kas Kamar 7</h1>
             </div>
             <div class="flex items-center gap-3">
-                <div class="bg-white/20 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-inner" id="mobile-connection-status">
-                    Offline
+                <div class="bg-white/20 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-inner flex items-center gap-1.5" id="mobile-connection-status">
+                    <span class="w-2 h-2 rounded-full bg-yellow-300 animate-pulse" id="sync-dot-mob"></span> Cloud
                 </div>
                 <button id="btn-login-mobile" onclick="openModal('modal-login')" class="text-white hover:text-emerald-100"><i class="fa-solid fa-right-to-bracket text-lg"></i></button>
                 <button id="btn-logout-mobile" onclick="handleLogout()" class="hidden text-white hover:text-red-200"><i class="fa-solid fa-right-from-bracket text-lg"></i></button>
@@ -127,10 +176,10 @@
                 <div class="flex justify-between items-end mb-6">
                     <div>
                         <h2 class="text-2xl font-bold text-gray-800">Dashboard</h2>
-                        <p class="text-sm text-gray-500">Ringkasan keuangan Kas Kamar 7</p>
+                        <p class="text-sm text-gray-500">Ringkasan keuangan Kas Kamar 7 (Realtime)</p>
                     </div>
-                    <div class="hidden md:block bg-gray-200 text-gray-600 px-3 py-1 rounded-full text-xs font-semibold" id="desktop-connection-status">
-                        <i class="fa-solid fa-circle-xmark mr-1"></i> Belum Terhubung Sheet
+                    <div class="hidden md:flex items-center gap-2 bg-gray-200 text-gray-600 px-3 py-1 rounded-full text-xs font-semibold" id="desktop-connection-status">
+                        <span class="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse" id="sync-dot-desk"></span> <span id="sync-status-text">Menghubungkan Cloud...</span>
                     </div>
                 </div>
 
@@ -273,7 +322,7 @@
             <section id="view-pengaturan" class="view-section">
                 <div class="mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Integrasi Google Sheets</h2>
-                    <p class="text-sm text-gray-500">Backup dan pantau data secara real-time di spreadsheet Anda</p>
+                    <p class="text-sm text-gray-500">Backup otomatis ke Google Spreadsheet Anda</p>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -281,110 +330,31 @@
                     <div class="space-y-6">
                         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                             <div class="flex items-center gap-4 mb-6">
-                                <div id="status-icon" class="w-12 h-12 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-2xl shadow-inner">
-                                    <i class="fa-solid fa-link-slash"></i>
+                                <div id="status-icon" class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-500 flex items-center justify-center text-2xl shadow-inner">
+                                    <i class="fa-solid fa-link"></i>
                                 </div>
                                 <div>
-                                    <h3 class="font-bold text-gray-800 text-lg">Status Koneksi</h3>
-                                    <p id="status-text" class="text-gray-500 text-sm">Belum terhubung ke web app</p>
+                                    <h3 class="font-bold text-gray-800 text-lg">Status Koneksi Sheet</h3>
+                                    <p id="status-text" class="text-emerald-600 text-sm font-semibold">Terhubung ke Spreadsheet</p>
                                 </div>
                             </div>
 
                             <form id="form-gsheet" onsubmit="saveSheetUrl(event)" class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Google Apps Script Web App URL</label>
-                                    <input type="url" id="sheet-url" placeholder="https://script.google.com/macros/s/AKfycb.../exec" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm transition-all" required>
+                                    <input type="url" id="sheet-url" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm transition-all" required>
                                 </div>
                                 <div class="flex gap-2">
                                     <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-medium transition-colors shadow-md shadow-blue-200">
-                                        Simpan & Hubungkan
-                                    </button>
-                                    <button type="button" onclick="disconnectSheet()" class="px-4 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-medium transition-colors" title="Putuskan Koneksi">
-                                        <i class="fa-solid fa-trash"></i>
+                                        Simpan URL Sheet
                                     </button>
                                 </div>
                                 <div class="mt-2">
                                     <button type="button" onclick="testKoneksi()" class="w-full bg-yellow-50 hover:bg-yellow-100 text-yellow-700 py-2.5 rounded-xl font-medium transition-colors border border-yellow-200 shadow-sm flex items-center justify-center gap-2">
-                                        <i class="fa-solid fa-flask"></i> Coba Test Koneksi Langsung (Wajib Coba)
+                                        <i class="fa-solid fa-flask"></i> Coba Test Koneksi Langsung
                                     </button>
                                 </div>
                             </form>
-
-                            <div id="sync-container" class="hidden mt-4 pt-4 border-t border-gray-100">
-                                <button type="button" onclick="syncSemuaData()" class="w-full px-4 py-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
-                                    <i class="fa-solid fa-rotate"></i> Sinkronisasi Semua Data Lokal ke Sheet
-                                </button>
-                                <p class="text-xs text-gray-500 mt-2 text-center">Klik tombol di atas untuk mengirim riwayat transaksi lama ke Spreadsheet.</p>
-                            </div>
-
-                            <p class="mt-4 text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                                <i class="fa-solid fa-circle-info text-yellow-500 mr-1"></i> Saat dihubungkan, setiap kali Anda menambah transaksi baru di aplikasi ini, data akan otomatis dikirim ke Google Sheets Anda.
-                            </p>
-                        </div>
-                    </div>
-
-                    <!-- Panduan / Tutorial -->
-                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                        <h3 class="font-bold text-gray-800 text-lg mb-4 flex items-center gap-2">
-                            <i class="fa-solid fa-book-open text-emerald-500"></i> Panduan Instalasi Script
-                        </h3>
-                        
-                        <div class="space-y-4 text-sm text-gray-600">
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">1</div>
-                                <p>Buka <a href="https://sheets.google.com" target="_blank" class="text-blue-500 hover:underline">Google Sheets</a> dan buat spreadsheet baru. Beri nama sheet tersebut (misal: "Sheet1").</p>
-                            </div>
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">2</div>
-                                <p>Klik menu <b>Ekstensi</b> > <b>Apps Script</b>.</p>
-                            </div>
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">3</div>
-                                <div class="w-full">
-                                    <p class="mb-2">Hapus semua kode yang ada, lalu salin dan tempel kode di bawah ini:</p>
-                                    <div class="relative group">
-                                        <button onclick="copyScript()" class="absolute top-2 right-2 bg-gray-700 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">Salin</button>
-                                        <pre id="gs-code" class="bg-gray-900 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto font-mono leading-relaxed">
-function doGet(e) { return processData(e); }
-function doPost(e) { return processData(e); }
-
-function processData(e) {
-  try {
-    // MENGGUNAKAN ID SPREADSHEET ANDA SECARA LANGSUNG (100% PASTI TERHUBUNG)
-    var doc = SpreadsheetApp.openById("1-xXQkQ6ihHmZLeHCiUsvKxRj10FwzMBBhHaT5CM7KHc");
-    
-    // Mengambil sheet pertama (biasanya bernama Sheet1)
-    var sheet = doc.getSheets()[0];
-    
-    sheet.appendRow([
-      e.parameter.id || '-',
-      e.parameter.tanggal || '-',
-      e.parameter.jenis || '-',
-      e.parameter.nama_siswa || '-',
-      e.parameter.nominal || '-',
-      e.parameter.keterangan || '-'
-    ]);
-    
-    return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
-  } catch(error) {
-    return ContentService.createTextOutput("Error: " + error.message);
-  }
-}</pre>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">4</div>
-                                <p>Klik tombol <b>Terapkan (Deploy)</b> di pojok kanan atas > <b>Deployment baru (New Deployment)</b>. Pilih jenis: <b>Aplikasi Web (Web App)</b>. <br><span class="text-red-500 font-semibold text-xs mt-1 block"><i class="fa-solid fa-triangle-exclamation"></i> PENTING: Setiap mengubah kode, WAJIB pilih "Deployment Baru", bukan mengedit yang lama!</span></p>
-                            </div>
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">5</div>
-                                <p>Set akses "Yang memiliki akses (Who has access)" ke <b>Siapa saja (Anyone)</b>. Klik Terapkan.</p>
-                            </div>
-                            <div class="flex gap-3">
-                                <div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center shrink-0">6</div>
-                                <p>Salin URL Web App yang muncul, dan tempel ke kolom di sebelah kiri halaman ini.</p>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -496,7 +466,7 @@ function processData(e) {
         let isBendahara = localStorage.getItem('kaskita_role') === 'bendahara';
 
         let state = {
-            siswa: JSON.parse(localStorage.getItem('kaskita_siswa')) || [
+            siswa: [
                 { id: 'id-1', nama: 'Abidzar Nuha Wafi' },
                 { id: 'id-2', nama: 'Abyan Dzaky Hafizh Kurniawan' },
                 { id: 'id-3', nama: 'Akbar Nurfatah Arsadi' },
@@ -514,8 +484,8 @@ function processData(e) {
                 { id: 'id-15', nama: 'Muhammad Ali Shahib Aidid' },
                 { id: 'id-16', nama: 'Mohammad Ezra Rafiandhika' }
             ],
-            transaksi: JSON.parse(localStorage.getItem('kaskita_transaksi')) || [],
-            sheetUrl: localStorage.getItem('kaskita_sheet_url') || 'https://script.google.com/macros/s/AKfycbwOQZe3Jk7TDGHWOlSLzT6MnLEt3BO0kEeHV7UJ2Ck1pJtOHiIR3dp9EQT2XCgnNnMg_g/exec'
+            transaksi: [],
+            sheetUrl: localStorage.getItem('kaskita_sheet_url') || 'https://script.google.com/macros/s/AKfycbyegXpVFwc2bAHqn_anBxESBIqvtrWnzFUHQnipimVzIgtSW-68pzo0W7GWoeWAs-jZWg/exec'
         };
 
         let currentFilter = 'semua';
@@ -535,70 +505,96 @@ function processData(e) {
             return 'id-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
         };
 
-        const saveData = () => {
-            localStorage.setItem('kaskita_siswa', JSON.stringify(state.siswa));
-            localStorage.setItem('kaskita_transaksi', JSON.stringify(state.transaksi));
+        // FIREBASE CLOUD SYNC
+        window.setupCloudListeners = async function() {
+            if (!window.db || !window.auth) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+            const { collection, onSnapshot, doc, setDoc, getDocs } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+            
+            // Reference to public collections
+            const siswaColRef = collection(db, 'artifacts', appId, 'public', 'data', 'siswa');
+            const transaksiColRef = collection(db, 'artifacts', appId, 'public', 'data', 'transaksi');
+
+            // Initial seed if empty
+            const siswaSnapshot = await getDocs(siswaColRef);
+            if (siswaSnapshot.empty) {
+                for (let s of state.siswa) {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'siswa', s.id), s);
+                }
+            }
+
+            // Realtime listener for Siswa
+            onSnapshot(siswaColRef, (snapshot) => {
+                let cloudSiswa = [];
+                snapshot.forEach(doc => {
+                    cloudSiswa.push(doc.data());
+                });
+                if (cloudSiswa.length > 0) {
+                    state.siswa = cloudSiswa;
+                }
+                renderSiswa();
+                updateConnectionStatus(true);
+            }, (error) => {
+                console.error("Siswa sync error:", error);
+                updateConnectionStatus(false);
+            });
+
+            // Realtime listener for Transaksi
+            onSnapshot(transaksiColRef, (snapshot) => {
+                let cloudTx = [];
+                snapshot.forEach(doc => {
+                    cloudTx.push(doc.data());
+                });
+                state.transaksi = cloudTx;
+                renderDashboard();
+                renderTransaksi();
+                renderSiswa();
+                updateConnectionStatus(true);
+            }, (error) => {
+                console.error("Transaksi sync error:", error);
+                updateConnectionStatus(false);
+            });
         };
+
+        function updateConnectionStatus(isOnline) {
+            const dotDesk = document.getElementById('sync-dot-desk');
+            const dotMob = document.getElementById('sync-dot-mob');
+            const textDesk = document.getElementById('sync-status-text');
+
+            if (isOnline) {
+                if (dotDesk) { dotDesk.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500'; }
+                if (dotMob) { dotMob.className = 'w-2 h-2 rounded-full bg-emerald-400'; }
+                if (textDesk) { textDesk.innerText = 'Online Realtime'; }
+            } else {
+                if (dotDesk) { dotDesk.className = 'w-2.5 h-2.5 rounded-full bg-red-500'; }
+                if (dotMob) { dotMob.className = 'w-2 h-2 rounded-full bg-red-400'; }
+                if (textDesk) { textDesk.innerText = 'Offline Mode'; }
+            }
+        }
 
         // API SPREADSHEET (APPS SCRIPT)
         async function sendToGoogleSheet(transaksiData) {
             if (!state.sheetUrl) return true;
 
             try {
-                // Mengubah format ke URL Parameters untuk metode GET
                 const params = new URLSearchParams({
                     id: transaksiData.id,
                     tanggal: formatDate(transaksiData.tanggal),
                     jenis: transaksiData.jenis,
                     nama_siswa: transaksiData.jenis === 'pemasukan' ? state.siswa.find(s => s.id === transaksiData.siswaId)?.nama || '-' : '-',
                     nominal: formatRupiah(transaksiData.nominal),
-                    keterangan: transaksiData.jenis === 'pemasukan' ? 'Setoran Kas' : transaksiData.keterangan
+                    keterangan: transaksiData.jenis === 'pemasukan' ? 'Setoran Kas' : (transaksiData.keterangan || '-')
                 });
 
-                // Menggunakan teknik Image Beacon yang 100% kebal blokir CORS browser
-                return new Promise((resolve) => {
-                    const img = new Image();
-                    img.onload = () => resolve(true);
-                    img.onerror = () => resolve(true); // Akan memicu error karena response bukan gambar, tapi request TETAP sampai ke Google!
-                    img.src = state.sheetUrl + '?' + params.toString();
-                    
-                    setTimeout(() => resolve(true), 2000); // Timeout safety
+                await fetch(state.sheetUrl + '?' + params.toString(), {
+                    method: 'GET',
+                    mode: 'no-cors' 
                 });
+                return true;
             } catch (error) {
                 console.error("Gagal sinkronisasi Google Sheet:", error);
                 return false;
             }
-        }
-
-        async function syncSemuaData() {
-            if (!state.sheetUrl) return;
-            if (state.transaksi.length === 0) {
-                Swal.fire('Info', 'Belum ada data transaksi lokal untuk dikirim.', 'info');
-                return;
-            }
-
-            Swal.fire({
-                title: 'Sinkronisasi...',
-                text: `Mengirim ${state.transaksi.length} data ke Spreadsheet. Mohon tunggu, jangan tutup halaman ini.`,
-                allowOutsideClick: false,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
-            });
-
-            let success = 0;
-            let txToSync = [...state.transaksi].sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal));
-
-            for (let tx of txToSync) {
-                let ok = await sendToGoogleSheet(tx);
-                if (ok) success++;
-            }
-
-            Swal.fire({
-                icon: success > 0 ? 'success' : 'warning',
-                title: 'Selesai!',
-                text: `${success} dari ${state.transaksi.length} data berhasil dikirim ke Spreadsheet.`
-            });
         }
 
         // UI INTERACTIONS
@@ -798,13 +794,11 @@ function processData(e) {
             }
 
             renderChart();
-            updateConnectionBadge();
         }
 
         function renderChart() {
             const ctx = document.getElementById('financeChart').getContext('2d');
             
-            // Fixed range: August 2026 until June 2027
             const fixedMonths = [
                 { label: 'Agu 2026', year: 2026, month: 7 },
                 { label: 'Sep 2026', year: 2026, month: 8 },
@@ -861,15 +855,18 @@ function processData(e) {
             });
         }
 
-        function saveSiswa(e) {
+        async function saveSiswa(e) {
             e.preventDefault();
             const nama = document.getElementById('input-nama-siswa').value.trim();
-            if(nama) {
-                state.siswa.push({ id: generateId(), nama: nama });
-                saveData();
+            if(nama && window.db) {
+                const sId = generateId();
+                const newSiswa = { id: sId, nama: nama };
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'siswa', sId), newSiswa);
+
                 closeModal('modal-siswa');
-                renderSiswa();
-                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Siswa ditambahkan!', timer: 1500, showConfirmButton: false });
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Siswa ditambahkan secara online!', timer: 1500, showConfirmButton: false });
             }
         }
 
@@ -877,6 +874,7 @@ function processData(e) {
             const query = document.getElementById('search-siswa')?.value.toLowerCase() || '';
             const tbody = document.getElementById('table-siswa');
             const emptyState = document.getElementById('empty-siswa');
+            if(!tbody) return;
             tbody.innerHTML = '';
             
             let filteredSiswa = state.siswa.filter(s => s.nama.toLowerCase().includes(query));
@@ -912,21 +910,19 @@ function processData(e) {
             }
         }
 
-        function deleteSiswa(id) {
+        async function deleteSiswa(id) {
             Swal.fire({
                 title: 'Hapus Siswa?',
-                text: "Data setoran siswa ini tidak akan terhapus, namun namanya akan hilang dari daftar.",
+                text: "Nama akan terhapus secara realtime dari semua perangkat.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ef4444',
-                cancelButtonColor: '#9ca3af',
-                confirmButtonText: 'Ya, hapus!',
-                cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    state.siswa = state.siswa.filter(s => s.id !== id);
-                    saveData();
-                    renderSiswa();
+                confirmButtonText: 'Ya, hapus!'
+            }).then(async (result) => {
+                if (result.isConfirmed && window.db) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                    const { doc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'siswa', id));
                     Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
                 }
             })
@@ -934,8 +930,10 @@ function processData(e) {
 
         function populateSiswaDropdown() {
             const select = document.getElementById('input-siswa-id');
+            if(!select) return;
             select.innerHTML = '';
-            state.siswa.forEach(s => {
+            let sortedSiswa = [...state.siswa].sort((a,b) => a.nama.localeCompare(b.nama));
+            sortedSiswa.forEach(s => {
                 let opt = document.createElement('option');
                 opt.value = s.id;
                 opt.innerText = s.nama;
@@ -977,8 +975,9 @@ function processData(e) {
             const nominal = document.getElementById('input-nominal').value;
             const tanggal = document.getElementById('input-tanggal').value;
             
+            const txId = generateId();
             let tx = {
-                id: generateId(),
+                id: txId,
                 jenis: jenis,
                 nominal: nominal,
                 tanggal: tanggal,
@@ -987,28 +986,21 @@ function processData(e) {
 
             if(jenis === 'pemasukan') {
                 tx.siswaId = document.getElementById('input-siswa-id').value;
-                if(!tx.siswaId) {
-                    Swal.fire('Error', 'Silakan tambah data siswa terlebih dahulu.', 'error');
-                    btnSave.innerHTML = 'Simpan Transaksi'; btnSave.disabled = false;
-                    return;
-                }
             } else {
                 tx.keterangan = document.getElementById('input-keterangan').value;
             }
 
-            state.transaksi.push(tx);
-            saveData();
-
-            if(state.sheetUrl) {
-               await sendToGoogleSheet(tx);
+            if (window.db) {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transaksi', txId), tx);
             }
 
-            closeModal('modal-transaksi');
-            renderTransaksi();
-            
-            if(document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            // Sync to Google Sheet as backup
+            await sendToGoogleSheet(tx);
 
-            Swal.fire({ icon: 'success', title: 'Tersimpan', text: 'Transaksi berhasil dicatat', timer: 1500, showConfirmButton: false });
+            closeModal('modal-transaksi');
+            Swal.fire({ icon: 'success', title: 'Tersimpan', text: 'Transaksi berhasil disinkronisasi ke Cloud & Spreadsheet', timer: 1500, showConfirmButton: false });
             
             btnSave.innerHTML = 'Simpan Transaksi';
             btnSave.disabled = false;
@@ -1030,6 +1022,7 @@ function processData(e) {
         function renderTransaksi() {
             const tbody = document.getElementById('table-transaksi');
             const emptyState = document.getElementById('empty-transaksi');
+            if(!tbody) return;
             tbody.innerHTML = '';
 
             let filteredTx = [...state.transaksi].sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal));
@@ -1073,20 +1066,19 @@ function processData(e) {
             }
         }
 
-        function deleteTransaksi(id) {
+        async function deleteTransaksi(id) {
             Swal.fire({
                 title: 'Hapus Transaksi?',
-                text: "Data akan dihapus permanen dari aplikasi ini.",
+                text: "Data akan terhapus permanen secara online.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ef4444',
-                cancelButtonColor: '#9ca3af',
                 confirmButtonText: 'Ya, hapus!'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    state.transaksi = state.transaksi.filter(t => t.id !== id);
-                    saveData();
-                    renderTransaksi();
+            }).then(async (result) => {
+                if (result.isConfirmed && window.db) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                    const { doc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transaksi', id));
                     Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
                 }
             })
@@ -1094,7 +1086,6 @@ function processData(e) {
 
         function renderPengaturan() {
             document.getElementById('sheet-url').value = state.sheetUrl;
-            updateConnectionUI();
         }
 
         function saveSheetUrl(e) {
@@ -1103,17 +1094,16 @@ function processData(e) {
             if(url.startsWith('https://script.google.com/')) {
                 state.sheetUrl = url;
                 localStorage.setItem('kaskita_sheet_url', url);
-                updateConnectionUI();
-                Swal.fire('Terhubung!', 'Koneksi ke Google Sheets berhasil disetel. Transaksi berikutnya akan disinkronisasi.', 'success');
+                Swal.fire('Tersimpan!', 'URL Spreadsheet berhasil diperbarui.', 'success');
             } else {
-                Swal.fire('URL Tidak Valid', 'Pastikan URL berasal dari web app Google Apps Script (https://script.google.com/...)', 'error');
+                Swal.fire('URL Tidak Valid', 'Pastikan URL berasal dari web app Google Apps Script', 'error');
             }
         }
 
         function testKoneksi() {
             const url = document.getElementById('sheet-url').value.trim();
             if(!url) {
-                Swal.fire('Info', 'Harap masukkan URL dan klik Simpan & Hubungkan terlebih dahulu.', 'warning');
+                Swal.fire('Info', 'Harap masukkan URL terlebih dahulu.', 'warning');
                 return;
             }
             
@@ -1121,107 +1111,17 @@ function processData(e) {
                 id: 'TEST-123',
                 tanggal: formatDate(new Date().toISOString()),
                 jenis: 'pemasukan',
-                nama_siswa: 'UJI COBA SISTEM',
+                nama_siswa: 'UJI COBA REALTIME',
                 nominal: 'Rp 0',
-                keterangan: 'Jika tulisan ini muncul, koneksi BERHASIL'
+                keterangan: 'Koneksi Berhasil'
             });
             
-            const testUrl = url + '?' + testParams.toString();
-            
-            Swal.fire({
-                title: 'Tes Koneksi Langsung',
-                html: 'Sistem akan membuka tab baru.<br><br>Jika di tab baru muncul tulisan <b>"Success"</b>, dan data "UJI COBA SISTEM" muncul di Spreadsheet Anda, berarti script sudah bekerja sempurna!',
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonText: 'Buka Tab Uji Coba',
-                cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    window.open(testUrl, '_blank');
-                }
-            });
+            window.open(url + '?' + testParams.toString(), '_blank');
         }
 
-        function disconnectSheet() {
-            if(!state.sheetUrl) return;
-            Swal.fire({
-                title: 'Putuskan Koneksi?',
-                text: "Aplikasi tidak akan lagi mengirim data ke Google Sheets.",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#ef4444',
-                confirmButtonText: 'Putuskan'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    state.sheetUrl = '';
-                    localStorage.removeItem('kaskita_sheet_url');
-                    document.getElementById('sheet-url').value = '';
-                    updateConnectionUI();
-                    Swal.fire('Terputus', 'Koneksi telah dihentikan.', 'success');
-                }
-            });
-        }
-
-        function updateConnectionUI() {
-            const icon = document.getElementById('status-icon');
-            const text = document.getElementById('status-text');
-            const syncContainer = document.getElementById('sync-container');
-            
-            if(state.sheetUrl) {
-                icon.className = 'w-12 h-12 rounded-full bg-emerald-100 text-emerald-500 flex items-center justify-center text-2xl shadow-inner';
-                icon.innerHTML = '<i class="fa-solid fa-link"></i>';
-                text.innerHTML = '<span class="text-emerald-600 font-semibold">Terhubung ke Web App Active</span>';
-                if(syncContainer) syncContainer.classList.remove('hidden');
-            } else {
-                icon.className = 'w-12 h-12 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-2xl shadow-inner';
-                icon.innerHTML = '<i class="fa-solid fa-link-slash"></i>';
-                text.innerHTML = 'Belum terhubung ke web app';
-                if(syncContainer) syncContainer.classList.add('hidden');
-            }
-            updateConnectionBadge();
-        }
-
-        function updateConnectionBadge() {
-            const desk = document.getElementById('desktop-connection-status');
-            const mob = document.getElementById('mobile-connection-status');
-            
-            if(state.sheetUrl) {
-                desk.className = 'hidden md:block bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-semibold';
-                desk.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Tersambung GSheet';
-                mob.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1 text-emerald-200"></i> Online';
-            } else {
-                desk.className = 'hidden md:block bg-gray-200 text-gray-600 px-3 py-1 rounded-full text-xs font-semibold';
-                desk.innerHTML = '<i class="fa-solid fa-circle-xmark mr-1"></i> Lokal';
-                mob.innerHTML = '<i class="fa-solid fa-hard-drive mr-1"></i> Lokal';
-            }
-        }
-
-        function copyScript() {
-            const text = document.getElementById('gs-code').innerText;
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: 'Kode berhasil disalin',
-                    showConfirmButton: false,
-                    timer: 1500
-                });
-            } catch (err) {
-                console.error('Gagal menyalin', err);
-            }
-            document.body.removeChild(textArea);
-        }
-
-        window.onload = function() {
+        window.initializeAppUI = function() {
             updateAuthUI();
             renderDashboard();
-            updateConnectionBadge();
         };
     </script>
 </body>
