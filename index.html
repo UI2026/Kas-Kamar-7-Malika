@@ -165,15 +165,25 @@
 
         // Fungsi Global Firebase untuk dipakai di UI
         window.cloudSetDoc = async (koleksi, id, data) => {
-            if (!window.auth || !window.auth.currentUser) throw new Error("Belum terkoneksi");
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
-            await setDoc(doc(window.db, 'artifacts', appId, 'public', 'data', koleksi, id), data);
+            if (!window.auth || !window.auth.currentUser || !window.db) return false;
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                await setDoc(doc(window.db, 'artifacts', appId, 'public', 'data', koleksi, id), data);
+                return true;
+            } catch (e) {
+                return false;
+            }
         };
 
         window.cloudDeleteDoc = async (koleksi, id) => {
-            if (!window.auth || !window.auth.currentUser) throw new Error("Belum terkoneksi");
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
-            await deleteDoc(doc(window.db, 'artifacts', appId, 'public', 'data', koleksi, id));
+            if (!window.auth || !window.auth.currentUser || !window.db) return false;
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar-7-malika';
+                await deleteDoc(doc(window.db, 'artifacts', appId, 'public', 'data', koleksi, id));
+                return true;
+            } catch (e) {
+                return false;
+            }
         };
     </script>
 </head>
@@ -592,10 +602,10 @@
                 if(textDesk) { textDesk.innerText = 'Online (Realtime)'; textDesk.className = 'text-emerald-700'; }
                 if(bgMob) { bgMob.className = 'bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1.5 shadow-sm'; bgMob.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Online`; }
             } else {
-                if(dotDesk) dotDesk.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
-                if(dotMob) dotMob.className = 'w-2 h-2 rounded-full bg-red-400';
-                if(textDesk) { textDesk.innerText = 'Offline / Terputus'; textDesk.className = 'text-red-600'; }
-                if(bgMob) { bgMob.className = 'bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1.5 shadow-sm'; bgMob.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> Offline`; }
+                if(dotDesk) dotDesk.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+                if(dotMob) dotMob.className = 'w-2 h-2 rounded-full bg-slate-400';
+                if(textDesk) { textDesk.innerText = 'Mode Lokal / Offline'; textDesk.className = 'text-slate-600'; }
+                if(bgMob) { bgMob.className = 'bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1.5 shadow-sm'; bgMob.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500"></span> Lokal`; }
             }
         }
 
@@ -613,9 +623,11 @@
                     keterangan: transaksiData.jenis === 'pemasukan' ? 'Setoran Kas' : (transaksiData.keterangan || '-')
                 });
 
-                // Teknik Image Beacon: 100% Kebal pemblokiran CORS browser
-                const beacon = new Image();
-                beacon.src = window.state.sheetUrl + '?' + params.toString();
+                // Fetch metode no-cors paling ampuh menembus blokir browser
+                fetch(window.state.sheetUrl + '?' + params.toString(), {
+                    method: 'GET',
+                    mode: 'no-cors'
+                }).catch(e => console.log("Fetch di latar belakang: ", e));
                 
             } catch (error) {
                 console.error("Gagal backup ke Google Sheet:", error);
@@ -887,11 +899,20 @@
 
             try {
                 const sId = generateId();
-                await window.cloudSetDoc('siswa', sId, { id: sId, nama: nama });
+                const dataSiswa = { id: sId, nama: nama };
+                
+                const cloudOk = await window.cloudSetDoc('siswa', sId, dataSiswa);
+                
+                if (!cloudOk) {
+                    window.state.siswa.push(dataSiswa);
+                    localStorage.setItem('kaskita_siswa', JSON.stringify(window.state.siswa));
+                    window.renderSiswa();
+                }
+
                 closeModal('modal-siswa');
-                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Data siswa tersimpan di Cloud', timer: 1500, showConfirmButton: false });
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Data siswa tersimpan', timer: 1500, showConfirmButton: false });
             } catch (error) {
-                Swal.fire('Error', 'Gagal menyimpan. Pastikan koneksi internet stabil.', 'error');
+                Swal.fire('Error', 'Gagal menyimpan. Pastikan memori browser cukup.', 'error');
             } finally {
                 btn.innerHTML = 'Simpan ke Cloud';
                 btn.disabled = false;
@@ -901,7 +922,7 @@
         async function deleteSiswa(id) {
             Swal.fire({
                 title: 'Hapus Siswa?',
-                text: "Nama akan terhapus dari Cloud secara permanen.",
+                text: "Nama akan terhapus.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ef4444',
@@ -910,7 +931,12 @@
             }).then(async (result) => {
                 if (result.isConfirmed) {
                     try {
-                        await window.cloudDeleteDoc('siswa', id);
+                        const cloudOk = await window.cloudDeleteDoc('siswa', id);
+                        if (!cloudOk) {
+                            window.state.siswa = window.state.siswa.filter(s => s.id !== id);
+                            localStorage.setItem('kaskita_siswa', JSON.stringify(window.state.siswa));
+                            window.renderSiswa();
+                        }
                         Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
                     } catch (error) {
                         Swal.fire('Error', 'Gagal menghapus data.', 'error');
@@ -947,7 +973,7 @@
         async function saveTransaksi(e) {
             e.preventDefault();
             const btnSave = document.getElementById('btn-save-transaksi');
-            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Mengirim ke Cloud...';
+            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyimpan...';
             btnSave.disabled = true;
 
             const jenis = document.getElementById('input-jenis').value;
@@ -964,16 +990,24 @@
             else tx.keterangan = document.getElementById('input-keterangan').value.trim();
 
             try {
-                // 1. Simpan ke Firebase (Utama)
-                await window.cloudSetDoc('transaksi', txId, tx);
+                // 1. Simpan ke Firebase (Jika Online)
+                const cloudOk = await window.cloudSetDoc('transaksi', txId, tx);
                 
-                // 2. Backup ke Google Sheet (Latar belakang)
+                // 2. Simpan Lokal (Jika Cloud Error/Terputus)
+                if (!cloudOk) {
+                    window.state.transaksi.push(tx);
+                    localStorage.setItem('kaskita_transaksi', JSON.stringify(window.state.transaksi));
+                    window.renderTransaksi();
+                    window.renderDashboard();
+                }
+
+                // 3. Backup ke Google Sheet (Selalu dijalankan)
                 sendToGoogleSheet(tx);
 
                 closeModal('modal-transaksi');
-                Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Transaksi berhasil disinkronisasi ke seluruh perangkat.', timer: 2000, showConfirmButton: false });
+                Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Transaksi berhasil dicatat.', timer: 2000, showConfirmButton: false });
             } catch (error) {
-                Swal.fire('Error', 'Gagal menyimpan transaksi ke Cloud. Silakan periksa koneksi internet Anda.', 'error');
+                Swal.fire('Error', 'Gagal menyimpan transaksi. Pastikan memori browser cukup.', 'error');
             } finally {
                 btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i> Simpan Transaksi';
                 btnSave.disabled = false;
@@ -1040,7 +1074,7 @@
         async function deleteTransaksi(id) {
             Swal.fire({
                 title: 'Hapus Transaksi?',
-                text: "Data akan terhapus dari seluruh perangkat (Cloud).",
+                text: "Data akan terhapus.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ef4444',
@@ -1049,10 +1083,16 @@
             }).then(async (result) => {
                 if (result.isConfirmed) {
                     try {
-                        await window.cloudDeleteDoc('transaksi', id);
+                        const cloudOk = await window.cloudDeleteDoc('transaksi', id);
+                        if (!cloudOk) {
+                            window.state.transaksi = window.state.transaksi.filter(t => t.id !== id);
+                            localStorage.setItem('kaskita_transaksi', JSON.stringify(window.state.transaksi));
+                            window.renderTransaksi();
+                            window.renderDashboard();
+                        }
                         Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
                     } catch (error) {
-                        Swal.fire('Error', 'Gagal menghapus data di Cloud.', 'error');
+                        Swal.fire('Error', 'Gagal menghapus data.', 'error');
                     }
                 }
             })
