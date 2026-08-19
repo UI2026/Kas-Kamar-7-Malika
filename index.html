@@ -108,37 +108,29 @@
             // 1. Cek apakah daftar siswa masih kosong (Sistem Cloud Baru)
             try {
                 const siswaSnap = await getDocs(siswaRef);
-                if (siswaSnap.empty) {
-                    console.log("Mengisi daftar siswa default ke Cloud...");
-                    const defaultSiswa = [
-                        { id: 's1', nama: 'Abidzar Nuha Wafi' },
-                        { id: 's2', nama: 'Abyan Dzaky Hafizh Kurniawan' },
-                        { id: 's3', nama: 'Akbar Nurfatah Arsadi' },
-                        { id: 's4', nama: 'Al Barra Ananta Putra' },
-                        { id: 's5', nama: 'Annabighoh Syabanu Gunawan' },
-                        { id: 's6', nama: 'Arya Devano' },
-                        { id: 's7', nama: 'Fakhri Muhammad Mumtaz' },
-                        { id: 's8', nama: 'Fathir Muhammad Fadhilah' },
-                        { id: 's9', nama: 'Harry Harsya Shiddiq' },
-                        { id: 's10', nama: 'Ibad Najwan' },
-                        { id: 's11', nama: 'Ibni Shidqie Al Mumtazhar' },
-                        { id: 's12', nama: 'Ifan Sofyan' },
-                        { id: 's13', nama: 'Kenzie Dastan Shalahuddin Zan' },
-                        { id: 's14', nama: 'Mahfidz Ardiansyah' },
-                        { id: 's15', nama: 'Muhammad Ali Shahib Aidid' },
-                        { id: 's16', nama: 'Mohammad Ezra Rafiandhika' }
-                    ];
-                    for (let s of defaultSiswa) {
+                // Jika cloud kosong, tapi kita punya data lokal (termasuk nama default), Upload ke Cloud!
+                if (siswaSnap.empty && window.state.siswa.length > 0) {
+                    console.log("Upload sinkronisasi awal ke Cloud...");
+                    for (let s of window.state.siswa) {
                         await setDoc(doc(window.db, 'artifacts', appId, 'public', 'data', 'siswa', s.id), s);
                     }
+                    for (let tx of window.state.transaksi) {
+                        await setDoc(doc(window.db, 'artifacts', appId, 'public', 'data', 'transaksi', tx.id), tx);
+                    }
                 }
-            } catch (e) { console.error("Error cek data siswa default:", e); }
+            } catch (e) { console.error("Error cek data default:", e); }
 
             // 2. Realtime Listener untuk Data Siswa
             onSnapshot(siswaRef, (snapshot) => {
                 let cloudSiswa = [];
                 snapshot.forEach(doc => cloudSiswa.push(doc.data()));
-                window.state.siswa = cloudSiswa;
+                
+                // Jangan timpa jadi kosong jika kita masih punya data lokal!
+                if (cloudSiswa.length > 0) {
+                    window.state.siswa = cloudSiswa;
+                    localStorage.setItem('kaskita_siswa', JSON.stringify(cloudSiswa));
+                }
+                
                 window.renderSiswa();
                 updateConnectionStatus(true);
             }, (error) => {
@@ -150,10 +142,15 @@
             onSnapshot(transaksiRef, (snapshot) => {
                 let cloudTx = [];
                 snapshot.forEach(doc => cloudTx.push(doc.data()));
-                window.state.transaksi = cloudTx;
+                
+                if (cloudTx.length > 0 || window.state.transaksi.length === 0) {
+                    window.state.transaksi = cloudTx;
+                    localStorage.setItem('kaskita_transaksi', JSON.stringify(cloudTx));
+                }
+                
                 window.renderDashboard();
                 window.renderTransaksi();
-                window.renderSiswa(); // Render ulang siswa untuk update saldo
+                window.renderSiswa(); 
                 updateConnectionStatus(true);
             }, (error) => {
                 console.error("Gagal sinkronisasi transaksi:", error);
@@ -525,9 +522,45 @@
         const PIN_BENDAHARA = "808080";
         let isBendahara = localStorage.getItem('kaskita_role') === 'bendahara';
 
+        // Daftar 16 Santri Default
+        const defaultSiswa = [
+            { id: "std-01", nama: "Abidzar Nuha Wafi" },
+            { id: "std-02", nama: "Abyan Dzaky Hafizh Kurniawan" },
+            { id: "std-03", nama: "Akbar Nurfatah Arsadi" },
+            { id: "std-04", nama: "Al Barra Ananta Putra" },
+            { id: "std-05", nama: "Annabighoh Syabanu Gunawan" },
+            { id: "std-06", nama: "Arya Devano" },
+            { id: "std-07", nama: "Fakhri Muhammad Mumtaz" },
+            { id: "std-08", nama: "Fathir Muhammad Fadhilah" },
+            { id: "std-09", nama: "Harry Harsya Shiddiq" },
+            { id: "std-10", nama: "Ibad Najwan" },
+            { id: "std-11", nama: "Ibni Shidqie Al Mumtazhar" },
+            { id: "std-12", nama: "Ifan Sofyan" },
+            { id: "std-13", nama: "Kenzie Dastan Shalahuddin Zan" },
+            { id: "std-14", nama: "Mahfidz Ardiansyah" },
+            { id: "std-15", nama: "Muhammad Ali Shahib Aidid" },
+            { id: "std-16", nama: "Mohammad Ezra Rafiandhika" }
+        ];
+
+        // Ambil dari penyimpanan lokal, jika kosong, pakai default
+        let localSiswa = [];
+        try {
+            const saved = localStorage.getItem('kaskita_siswa');
+            localSiswa = saved ? JSON.parse(saved) : defaultSiswa;
+            if(localSiswa.length === 0) localSiswa = defaultSiswa;
+        } catch(e) {
+            localSiswa = defaultSiswa;
+        }
+
+        let localTx = [];
+        try {
+            const saved = localStorage.getItem('kaskita_transaksi');
+            localTx = saved ? JSON.parse(saved) : [];
+        } catch(e) {}
+
         window.state = {
-            siswa: [],
-            transaksi: [],
+            siswa: localSiswa,
+            transaksi: localTx,
             sheetUrl: localStorage.getItem('kaskita_sheet_url') || ''
         };
 
@@ -580,11 +613,10 @@
                     keterangan: transaksiData.jenis === 'pemasukan' ? 'Setoran Kas' : (transaksiData.keterangan || '-')
                 });
 
-                // Menggunakan mode no-cors agar tidak diblokir browser
-                fetch(window.state.sheetUrl + '?' + params.toString(), {
-                    method: 'GET',
-                    mode: 'no-cors' 
-                });
+                // Teknik Image Beacon: 100% Kebal pemblokiran CORS browser
+                const beacon = new Image();
+                beacon.src = window.state.sheetUrl + '?' + params.toString();
+                
             } catch (error) {
                 console.error("Gagal backup ke Google Sheet:", error);
             }
