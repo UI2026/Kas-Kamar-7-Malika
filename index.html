@@ -767,7 +767,7 @@
                 const select = document.getElementById('input-siswa-id');
                 select.innerHTML = '';
                 let sortedSiswa = [...window.state.siswa].sort((a,b) => a.nama.localeCompare(b.nama));
-                sortedSiswa.forEach(s => select.add(new Option(s.nama, s.id))); 
+                sortedSiswa.forEach(s => select.add(new Option(s.nama, s.nama))); 
                 setJenisTransaksi('pemasukan');
                 document.getElementById('input-nominal').value = '';
                 document.getElementById('input-keterangan').value = '';
