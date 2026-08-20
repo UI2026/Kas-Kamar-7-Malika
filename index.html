@@ -60,16 +60,15 @@
     </nav>
 
     <main class="flex-1 overflow-y-auto w-full pb-32 md:pb-6 relative bg-slate-50">
-        
-        <!-- Header Mobile -->
         <header class="md:hidden bg-emerald-500 text-white p-4 shadow-md sticky top-0 z-30 flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-wallet text-xl"></i>
                 <h1 class="text-lg font-bold">Kas Kamar 7</h1>
             </div>
             <div class="flex items-center gap-3">
+                <!-- Indikator Auto-Sync Spreadsheet -->
                 <span id="sync-indicator" class="text-[10px] font-medium bg-emerald-600 px-2 py-1 rounded flex items-center gap-1 hidden">
-                    <i class="fa-solid fa-circle text-[8px] text-emerald-300 animate-pulse"></i> Realtime
+                    <i class="fa-solid fa-rotate text-[8px] text-emerald-300 fa-spin"></i> Auto-Sync
                 </span>
                 <button id="btn-login-mobile" onclick="openModal('modal-login')" class="text-white hover:text-emerald-100"><i class="fa-solid fa-right-to-bracket text-lg"></i></button>
                 <button id="btn-logout-mobile" onclick="handleLogout()" class="hidden text-white hover:text-red-200"><i class="fa-solid fa-right-from-bracket text-lg"></i></button>
@@ -77,14 +76,13 @@
         </header>
 
         <div class="p-4 md:p-8 max-w-6xl mx-auto">
-            
             <section id="view-dashboard" class="view-section active">
                 <div class="flex justify-between items-end mb-6">
                     <div>
                         <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
                             Dashboard
                             <span id="sync-indicator-desk" class="hidden text-xs align-middle bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold flex items-center gap-1.5 border border-emerald-200">
-                                <i class="fa-solid fa-circle text-[8px] text-emerald-500 animate-pulse"></i> Cloud Sync Aktif
+                                <i class="fa-solid fa-rotate text-[8px] text-emerald-500 fa-spin"></i> Auto-Sync Spreadsheet Aktif
                             </span>
                         </h2>
                         <p class="text-sm text-gray-500">Keuangan Kas Kamar 7 Malika Boarding School</p>
@@ -262,12 +260,14 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Nominal Uang (Rp)</label>
                     <div class="relative">
                         <span class="absolute left-4 top-3 text-gray-500 font-bold">Rp</span>
+                        <!-- Atribut required dihapus, validasi dipindah ke JS -->
                         <input type="number" id="input-nominal" class="w-full pl-12 pr-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-semibold text-lg" placeholder="0" min="1">
                     </div>
                 </div>
 
                 <div class="mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Tanggal Transaksi</label>
+                    <!-- Atribut required dihapus, validasi dipindah ke JS -->
                     <input type="date" id="input-tanggal" class="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all cursor-pointer">
                 </div>
 
@@ -281,28 +281,17 @@
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Konfigurasi Database Realtime (Mendapatkan dari Environment)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'kas-kamar7';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-
-        let app, db, auth;
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-        } catch(e) {
-            console.error("Firebase init error:", e);
-        }
+    <script>
+        // =========================================================================
+        // LINK GOOGLE APPS SCRIPT (UNTUK DATABASE SPREADSHEET)
+        // Ganti URL di bawah ini dengan URL Web App Apps Script milik Anda!
+        // =========================================================================
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw7ZN_US-2rFxi-EyLRq4ml-qGGXTsrimCEDHHOak4He0jtNxcfvlYHfRDiNvB7juSmqw/exec";
 
         // State Global Aplikasi
         const PIN_BENDAHARA = "808080";
-        // Menggunakan memory untuk keamanan, PIN harus dimasukkan tiap kali muat ulang.
         let isBendahara = false; 
+        let isSyncPaused = false; // Mencegah bentrok sinkronisasi saat input data
         
         window.state = {
             siswa: [
@@ -328,58 +317,64 @@
 
         let currentFilter = 'semua';
         let chartInstance = null;
+        let syncInterval = null;
 
         // Utilitas Format
         const formatRupiah = (angka) => { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka); };
         const formatDate = (dateString) => { const options = { day: 'numeric', month: 'short', year: 'numeric' }; return new Date(dateString).toLocaleDateString('id-ID', options); };
 
-        async function initializeAppSystem() {
-            updateAuthUI();
+        async function fetchSpreadsheetData() {
+            if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("ISI_DENGAN_URL") || isSyncPaused) return;
             
-            // Login ke Firebase untuk Sinkronisasi Realtime
-            if(!auth) return;
-            const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
             try {
-                if (token) {
-                    await signInWithCustomToken(auth, token);
-                } else {
-                    await signInAnonymously(auth);
+                // Tambahan 'redirect: follow' agar pengalihan link Google Sheet tidak diblokir
+                const response = await fetch(APPS_SCRIPT_URL + "?action=get", {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                
+                const result = await response.json();
+                
+                if(result && result.status === 'success') {
+                    // Cek apakah ada data baru dengan membandingkan datanya
+                    const newDataString = JSON.stringify(result.data);
+                    const oldDataString = JSON.stringify(window.state.transaksi);
+                    
+                    if(newDataString !== oldDataString) {
+                        window.state.transaksi = result.data;
+                        window.renderDashboard();
+                        window.renderTransaksi();
+                        window.renderSiswa();
+                    }
+                    
+                    // Nyalakan indikator
+                    document.getElementById('sync-indicator').classList.remove('hidden');
+                    document.getElementById('sync-indicator-desk').classList.remove('hidden');
                 }
-                startRealtimeSync();
-            } catch (e) {
-                console.error("Auth error:", e);
-                Swal.fire('Koneksi Gagal', 'Gagal terhubung ke database. Coba muat ulang halaman.', 'error');
+            } catch(e) {
+                console.warn("Koneksi ditolak (CORS/Izin Akses). Jika Anda melihat ini, pastikan izin Deploy Google Apps Script diatur ke 'Siapa Saja':", e);
+                document.getElementById('sync-indicator').classList.add('hidden');
+                document.getElementById('sync-indicator-desk').classList.add('hidden');
             }
         }
 
-        function startRealtimeSync() {
-            if(!auth.currentUser) return;
-            
-            // Path strict: public data untuk seluruh aplikasi Kas
-            const txRef = collection(db, 'artifacts', appId, 'public', 'data', 'transaksi');
-            
-            onSnapshot(txRef, (snapshot) => {
-                const data = [];
-                snapshot.forEach(doc => {
-                    data.push({ firebaseId: doc.id, ...doc.data() });
+        function startAutoSync() {
+            if(APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("ISI_DENGAN_URL")) {
+                // Tarik data pertama kali langsung (tangkap error awal agar bersih)
+                fetchSpreadsheetData().catch(e => console.warn(e));
+                // Lakukan tarikan data otomatis setiap 4 detik untuk efek "Real-time"
+                syncInterval = setInterval(fetchSpreadsheetData, 4000);
+            } else {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Mode Offline',
+                    text: 'URL Spreadsheet belum diisi. Aplikasi berjalan dengan data kosong di memori sementara. (Silakan cek petunjuk untuk menghubungkan ke Google Sheets).',
+                    confirmButtonColor: '#10b981'
                 });
-                
-                window.state.transaksi = data;
-                
-                // Menyalakan indikator realtime
-                document.getElementById('sync-indicator').classList.remove('hidden');
-                document.getElementById('sync-indicator-desk').classList.remove('hidden');
-                
-                // Perbarui seluruh tampilan otomatis tanpa reload
                 window.renderDashboard();
-                window.renderTransaksi();
                 window.renderSiswa();
-                
-            }, (error) => {
-                console.error("Realtime sync error:", error);
-                document.getElementById('sync-indicator').classList.add('hidden');
-                document.getElementById('sync-indicator-desk').classList.add('hidden');
-            });
+                window.renderTransaksi();
+            }
         }
 
         window.switchView = function(viewId) {
@@ -464,8 +459,9 @@
         window.renderDashboard = function() {
             let totalPemasukan = 0; let totalPengeluaran = 0;
             window.state.transaksi.forEach(tx => {
-                if(tx.jenis === 'pemasukan') totalPemasukan += parseInt(tx.nominal);
-                else totalPengeluaran += parseInt(tx.nominal);
+                let nominalClean = parseInt(String(tx.nominal).replace(/[^0-9]/g, '')) || 0;
+                if(tx.jenis === 'pemasukan') totalPemasukan += nominalClean;
+                else totalPengeluaran += nominalClean;
             });
 
             document.getElementById('dash-saldo').innerText = formatRupiah(totalPemasukan - totalPengeluaran);
@@ -474,7 +470,8 @@
 
             const recentContainer = document.getElementById('recent-transactions');
             recentContainer.innerHTML = '';
-            let recentTx = [...window.state.transaksi].sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal)).slice(0, 4);
+            // Mengurutkan berdasarkan timestamp agar lebih akurat dari sekadar tanggal
+            let recentTx = [...window.state.transaksi].sort((a,b) => new Date(b.timestamp || b.tanggal) - new Date(a.timestamp || a.tanggal)).slice(0, 4);
             
             if(recentTx.length === 0) {
                 recentContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm italic">Belum ada transaksi</div>';
@@ -539,9 +536,7 @@
                     maintainAspectRatio: false, 
                     plugins: { 
                         legend: { display: false },
-                        tooltip: {
-                            callbacks: { label: function(context) { return formatRupiah(context.raw); } }
-                        }
+                        tooltip: { callbacks: { label: function(context) { return formatRupiah(context.raw); } } }
                     }, 
                     scales: { 
                         y: { 
@@ -574,7 +569,7 @@
             filteredSiswa.forEach((s, index) => {
                 let totalSetor = window.state.transaksi
                     .filter(t => t.jenis === 'pemasukan' && (t.siswaId === s.id || t.siswaId === s.nama))
-                    .reduce((sum, t) => sum + parseInt(t.nominal), 0);
+                    .reduce((sum, t) => sum + (parseInt(String(t.nominal).replace(/[^0-9]/g, '')) || 0), 0);
                 
                 tbody.innerHTML += `
                     <tr class="hover:bg-slate-50 transition-colors border-b border-gray-50 last:border-0">
@@ -599,7 +594,8 @@
             const emptyState = document.getElementById('empty-transaksi');
             if(!tbody) return; tbody.innerHTML = '';
 
-            let filteredTx = [...window.state.transaksi].sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal));
+            // Mengurutkan berdasarkan timestamp agar urutan hari ini presisi
+            let filteredTx = [...window.state.transaksi].sort((a,b) => new Date(b.timestamp || b.tanggal) - new Date(a.timestamp || a.tanggal));
             if(currentFilter !== 'semua') filteredTx = filteredTx.filter(t => t.jenis === currentFilter);
 
             if(filteredTx.length === 0) {
@@ -618,15 +614,17 @@
                     }
                     const iconName = isPemasukan ? `<div class="font-semibold text-gray-700"><i class="fa-solid fa-user text-gray-300 mr-1 text-xs"></i> ${nama}</div>` : `<div class="font-semibold text-gray-700"><i class="fa-solid fa-tag text-gray-300 mr-1 text-xs"></i> ${nama}</div>`;
                     
-                    // Gunakan firebaseId untuk menghapus data dari database yang tepat
-                    let actionHtml = isBendahara ? `<td class="p-4 text-center aksi-col"><button onclick="deleteTransaksi('${tx.firebaseId}')" class="text-red-400 hover:text-red-600 bg-red-50 w-8 h-8 rounded-full transition-colors" title="Hapus"><i class="fa-solid fa-trash-can"></i></button></td>` : `<td class="p-4 text-center aksi-col hidden"></td>`;
+                    // Tombol hapus memanggil id unik Spreadsheet
+                    let actionHtml = isBendahara ? `<td class="p-4 text-center aksi-col"><button onclick="deleteTransaksi('${tx.id}')" class="text-red-400 hover:text-red-600 bg-red-50 w-8 h-8 rounded-full transition-colors" title="Hapus"><i class="fa-solid fa-trash-can"></i></button></td>` : `<td class="p-4 text-center aksi-col hidden"></td>`;
+
+                    let nominalClean = parseInt(String(tx.nominal).replace(/[^0-9]/g, '')) || 0;
 
                     tbody.innerHTML += `
                         <tr class="hover:bg-slate-50 transition-colors border-b border-gray-50 last:border-0">
                             <td class="p-4 text-gray-500 font-medium whitespace-nowrap">${formatDate(tx.tanggal)}</td>
                             <td class="p-4 text-center"><span class="px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide uppercase ${badgeClass}">${badgeText}</span></td>
                             <td class="p-4">${iconName}</td>
-                            <td class="p-4 text-right font-bold text-base ${isPemasukan ? 'text-emerald-600' : 'text-gray-800'}">${isPemasukan ? '+' : '-'}${formatRupiah(tx.nominal)}</td>
+                            <td class="p-4 text-right font-bold text-base ${isPemasukan ? 'text-emerald-600' : 'text-gray-800'}">${isPemasukan ? '+' : '-'}${formatRupiah(nominalClean)}</td>
                             ${actionHtml}
                         </tr>
                     `;
@@ -654,13 +652,12 @@
 
         window.saveTransaksi = async function(e) {
             e.preventDefault();
-            if(!auth || !auth.currentUser) return Swal.fire('Gagal', 'Sistem gagal verifikasi keamanan jaringan. Mohon muat ulang.', 'error');
             
             const jenis = document.getElementById('input-jenis').value;
             const nominalVal = document.getElementById('input-nominal').value;
             const tanggalVal = document.getElementById('input-tanggal').value;
 
-            // Validasi manual
+            // Validasi manual HTML/JS agar SweetAlert muncul jika kosong
             if(!nominalVal || parseInt(nominalVal) <= 0) {
                 return Swal.fire('Perhatian', 'Nominal uang harus diisi dan lebih dari 0.', 'warning');
             }
@@ -669,6 +666,7 @@
             }
 
             let txData = {
+                id: "TX-" + Date.now().toString(), // ID Unik untuk hapus di sheet
                 jenis: jenis,
                 nominal: parseInt(nominalVal),
                 tanggal: tanggalVal,
@@ -685,50 +683,78 @@
                 if(!txData.keterangan) return Swal.fire('Perhatian', 'Keterangan atau tujuan pengeluaran harus diisi.', 'warning');
             }
 
-            const btnSave = document.getElementById('btn-save-transaksi');
-            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyimpan...';
-            btnSave.disabled = true;
+            // Teknik Optimistic UI (Render ke layar HP langsung sebelum nunggu Server merespon)
+            window.state.transaksi.push(txData);
+            isSyncPaused = true; // Jeda sinkronisasi agar layar tidak berkedip
+            window.renderDashboard();
+            window.renderTransaksi();
+            window.renderSiswa();
+            closeModal('modal-transaksi');
+            
+            Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Data langsung masuk dan sedang dikirim ke Spreadsheet.', timer: 2000, showConfirmButton: false });
 
-            try {
-                // Tembak langsung ke Firebase Firestore
-                const txRef = collection(db, 'artifacts', appId, 'public', 'data', 'transaksi');
-                await addDoc(txRef, txData);
-                
-                closeModal('modal-transaksi');
-                Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Transaksi berhasil dikirim ke Cloud.', timer: 1500, showConfirmButton: false });
-            } catch (error) {
-                console.error("Save error:", error);
-                Swal.fire('Error', 'Gagal menyimpan transaksi. Periksa koneksi internet Anda.', 'error');
-            } finally {
-                btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i> Simpan Transaksi';
-                btnSave.disabled = false;
+            // Pengiriman Background (Gagal/Berhasil tidak mengganggu kelancaran layar HP)
+            if(APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("ISI_DENGAN_URL")) {
+                try {
+                    fetch(APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', // Hindari error CORS di Console Log Browser
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({
+                            'action': 'insert',
+                            'data': JSON.stringify(txData)
+                        })
+                    }).finally(() => {
+                        // Buka kembali kunci sinkronisasi setelah 3 detik
+                        setTimeout(() => { isSyncPaused = false; fetchSpreadsheetData(); }, 3000);
+                    });
+                } catch(err) {
+                    console.error("Gagal mengirim ke sheet di background", err);
+                    isSyncPaused = false;
+                }
+            } else {
+                isSyncPaused = false;
             }
         };
 
-        window.deleteTransaksi = async function(firebaseId) {
-            if(!auth.currentUser) return;
-            
+        window.deleteTransaksi = async function(idTx) {
             Swal.fire({
                 title: 'Hapus Transaksi?',
-                text: "Data akan dihapus secara permanen dari server Cloud.",
+                text: "Data akan dihapus secara permanen.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ef4444',
                 cancelButtonColor: '#9ca3af',
                 confirmButtonText: 'Ya, Hapus'
-            }).then(async (result) => {
+            }).then((result) => {
                 if (result.isConfirmed) {
-                    try {
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'transaksi', firebaseId);
-                        await deleteDoc(docRef);
-                        
-                        Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
-                    } catch (error) {
-                        console.error("Delete error:", error);
-                        Swal.fire('Error', 'Gagal menghapus data dari Cloud.', 'error');
+                    // Teknik Optimistic UI (Hapus dari layar langsung)
+                    window.state.transaksi = window.state.transaksi.filter(t => t.id !== idTx);
+                    isSyncPaused = true; // Jeda sinkronisasi otomatis
+                    window.renderDashboard();
+                    window.renderTransaksi();
+                    window.renderSiswa();
+                    
+                    Swal.fire({ icon: 'success', title: 'Terhapus!', timer: 1500, showConfirmButton: false });
+
+                    // Background delete ke Spreadsheet
+                    if(APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("ISI_DENGAN_URL")) {
+                        fetch(APPS_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams({
+                                'action': 'delete',
+                                'id': idTx
+                            })
+                        }).finally(() => {
+                            setTimeout(() => { isSyncPaused = false; fetchSpreadsheetData(); }, 3000);
+                        });
+                    } else {
+                        isSyncPaused = false;
                     }
                 }
-            })
+            });
         };
 
         window.openModal = function(modalId) {
@@ -741,7 +767,7 @@
                 const select = document.getElementById('input-siswa-id');
                 select.innerHTML = '';
                 let sortedSiswa = [...window.state.siswa].sort((a,b) => a.nama.localeCompare(b.nama));
-                sortedSiswa.forEach(s => select.add(new Option(s.nama, s.id))); // Mengirim "std-XX" murni, nama dicari dari memori saat render
+                sortedSiswa.forEach(s => select.add(new Option(s.nama, s.id))); 
                 setJenisTransaksi('pemasukan');
                 document.getElementById('input-nominal').value = '';
                 document.getElementById('input-keterangan').value = '';
@@ -756,9 +782,10 @@
             setTimeout(() => modal.classList.add('hidden'), 300);
         };
 
-        // Memulai sistem
+        // Mulai aplikasi
         window.onload = () => {
-            initializeAppSystem();
+            updateAuthUI();
+            startAutoSync();
         };
     </script>
 </body>
