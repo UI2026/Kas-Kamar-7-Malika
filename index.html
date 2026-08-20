@@ -12,7 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; height: 100dvh; }
         .view-section { display: none; animation: fadeIn 0.3s ease-in-out; }
         .view-section.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -25,7 +25,7 @@
     </style>
 </head>
 
-<body class="flex h-screen overflow-hidden">
+<body class="flex overflow-hidden">
     <aside class="w-64 bg-white shadow-xl hidden md:flex flex-col z-20 transition-transform duration-300">
         <div class="p-6 border-b border-gray-100 flex items-center gap-3">
             <div class="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xl shadow-lg">
@@ -59,7 +59,7 @@
         <a href="#" onclick="switchView('transaksi')" id="nav-mobile-transaksi" class="nav-item flex flex-col items-center p-2 text-gray-400 rounded-lg w-1/3 transition-colors"><i class="fa-solid fa-money-bill-transfer mb-1 text-lg"></i><span class="text-[10px] font-medium">Transaksi</span></a>
     </nav>
 
-    <main class="flex-1 overflow-y-auto w-full pb-20 md:pb-0 relative bg-slate-50">
+    <main class="flex-1 overflow-y-auto w-full pb-32 md:pb-6 relative bg-slate-50">
         
         <header class="md:hidden bg-emerald-500 text-white p-4 shadow-md sticky top-0 z-30 flex justify-between items-center">
             <div class="flex items-center gap-2">
@@ -522,25 +522,77 @@
 
         function renderChart() {
             const ctx = document.getElementById('financeChart').getContext('2d');
-            const fixedMonths = [ { label: 'Agu 26', y: 2026, m: 7 }, { label: 'Sep 26', y: 2026, m: 8 }, { label: 'Okt 26', y: 2026, m: 9 }, { label: 'Nov 26', y: 2026, m: 10 }, { label: 'Des 26', y: 2026, m: 11 }, { label: 'Jan 27', y: 2027, m: 0 } ];
-            let monthlyData = {};
-            fixedMonths.forEach(m => monthlyData[m.label] = { in: 0, out: 0, year: m.y, month: m.m });
-
+            
+            // Hitung total keseluruhan
+            let totalIn = 0;
+            let totalOut = 0;
             window.state.transaksi.forEach(tx => {
-                let d = new Date(tx.tanggal);
-                fixedMonths.forEach(m => {
-                    if (m.year === d.getFullYear() && m.month === d.getMonth()) {
-                        if (tx.jenis === 'pemasukan') monthlyData[m.label].in += parseInt(tx.nominal);
-                        else monthlyData[m.label].out += parseInt(tx.nominal);
-                    }
-                });
+                if (tx.jenis === 'pemasukan') totalIn += parseInt(tx.nominal);
+                else totalOut += parseInt(tx.nominal);
             });
 
+            // Efek gradient untuk kesan 3D
+            const gradIn = ctx.createLinearGradient(0, 0, 0, 400);
+            gradIn.addColorStop(0, 'rgba(16, 185, 129, 1)');
+            gradIn.addColorStop(1, 'rgba(4, 120, 87, 0.8)');
+            
+            const gradOut = ctx.createLinearGradient(0, 0, 0, 400);
+            gradOut.addColorStop(0, 'rgba(239, 68, 68, 1)');
+            gradOut.addColorStop(1, 'rgba(153, 27, 27, 0.8)');
+
             if(chartInstance) chartInstance.destroy();
+            
+            Chart.defaults.font.family = 'Inter';
+
             chartInstance = new Chart(ctx, {
                 type: 'bar',
-                data: { labels: fixedMonths.map(m => m.label), datasets: [ { label: 'Pemasukan', data: fixedMonths.map(l => monthlyData[l.label].in), backgroundColor: '#10b981', borderRadius: 4, barPercentage: 0.6 }, { label: 'Pengeluaran', data: fixedMonths.map(l => monthlyData[l.label].out), backgroundColor: '#ef4444', borderRadius: 4, barPercentage: 0.6 } ] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true, font: { size: 11 } } } }, scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
+                data: { 
+                    labels: ['Total Pemasukan', 'Total Pengeluaran'], 
+                    datasets: [{ 
+                        data: [totalIn, totalOut], 
+                        backgroundColor: [gradIn, gradOut], 
+                        borderColor: ['#059669', '#dc2626'],
+                        borderWidth: 1,
+                        borderRadius: 8, 
+                        barPercentage: 0.5,
+                        hoverBackgroundColor: [gradIn, gradOut]
+                    }] 
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatRupiah(context.raw);
+                                }
+                            }
+                        }
+                    }, 
+                    scales: { 
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { color: '#f1f5f9' },
+                            ticks: {
+                                callback: function(value) {
+                                    return value >= 1000 ? 'Rp ' + (value/1000) + 'k' : 'Rp ' + value;
+                                }
+                            }
+                        }, 
+                        x: { grid: { display: false } } 
+                    },
+                    animation: {
+                        onProgress: function(animation) {
+                            // Menambahkan shadow secara live untuk efek 3D
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+                            ctx.shadowBlur = 10;
+                            ctx.shadowOffsetX = 4;
+                            ctx.shadowOffsetY = 4;
+                        }
+                    }
+                }
             });
         }
 
