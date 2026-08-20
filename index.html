@@ -309,7 +309,7 @@
         window.state = {
             siswa: defaultSiswa,
             transaksi: localTx,
-            sheetUrl: 'https://script.google.com/macros/s/AKfycbymXw4skaR3Vw4GZZmEEC_Iw8fFESC2e7c6JH7INO3ML25Xzn6hbbAWomM7gmX2zgUBkg/exec'
+            sheetUrl: 'https://script.google.com/macros/s/AKfycbxmTxlgkIglNPxucqk7C5nroxp8uT0J-qZRQqPvXYce3AxwPjCf6yHam85wLsUTJU7ojw/exec'
         };
 
         let currentFilter = 'semua';
@@ -325,12 +325,22 @@
             const icons = document.querySelectorAll('.sync-icon');
             icons.forEach(i => i.classList.add('fa-spin'));
 
-            try {
-                const urlTarikan = window.state.sheetUrl + '?action=read&nocache=' + new Date().getTime();
-                const response = await fetch(urlTarikan);
-                if (!response.ok) throw new Error("Gagal mengambil data");
-                const data = await response.json();
+            const callbackName = 'jsonpCallback_' + Math.round(100000 * Math.random());
+            
+            window[callbackName] = function(data) {
+                // Bersihkan script dan callback setelah selesai
+                delete window[callbackName];
+                const scriptEl = document.getElementById(callbackName);
+                if (scriptEl) document.body.removeChild(scriptEl);
+                icons.forEach(i => i.classList.remove('fa-spin'));
                 
+                if (data.error) {
+                    if(statusDesktop) statusDesktop.classList.remove('hidden');
+                    if(statusMobile) statusMobile.classList.remove('hidden');
+                    if(isManual) Swal.fire('Mode Offline', 'Koneksi ditolak oleh server Google.', 'info');
+                    return;
+                }
+
                 if(Array.isArray(data)) {
                     let txList = data.map(row => ({
                         id: row.id,
@@ -356,20 +366,34 @@
                         Swal.fire({ icon: 'success', title: 'Sinkronisasi Selesai', text: 'Data berhasil ditarik dari Google Sheet.', timer: 1500, showConfirmButton: false });
                     }
                 }
-            } catch(e) {
+            };
+
+            const script = document.createElement('script');
+            script.id = callbackName;
+            // Menambahkan parameter callback ke URL
+            script.src = window.state.sheetUrl + '?action=read&callback=' + callbackName + '&nocache=' + new Date().getTime();
+            
+            script.onerror = function() {
+                delete window[callbackName];
+                const scriptEl = document.getElementById(callbackName);
+                if (scriptEl) document.body.removeChild(scriptEl);
+                icons.forEach(i => i.classList.remove('fa-spin'));
                 if(statusDesktop) statusDesktop.classList.remove('hidden');
                 if(statusMobile) statusMobile.classList.remove('hidden');
-                if(isManual) {
-                    Swal.fire('Mode Offline', 'Aplikasi membaca data lokal perangkat karena koneksi sinkronisasi sedang dibatasi browser.', 'info');
-                }
-            } finally {
-                icons.forEach(i => i.classList.remove('fa-spin'));
-            }
+                if(isManual) Swal.fire('Mode Offline', 'Aplikasi membaca data lokal. Tidak ada koneksi.', 'info');
+            };
+
+            // Menjalankan penarikan data secara rahasia
+            document.body.appendChild(script);
         }
 
         window.onload = () => {
             if (window.initializeAppUI) window.initializeAppUI();
             syncDariSheet(false);
+            
+            setInterval(() => {
+                syncDariSheet(false);
+            }, 15000);
         };
 
         window.initializeAppUI = function() { updateAuthUI(); };
@@ -633,12 +657,19 @@
                 window.renderSiswa();
                 closeModal('modal-transaksi');
 
+                // TERJEMAHKAN ID MENJADI NAMA ASLI SEBELUM DIKIRIM KE GOOGLE SHEET
+                let namaPenyetor = '-';
+                if (tx.jenis === 'pemasukan') {
+                    let foundSiswa = window.state.siswa.find(s => s.id === tx.siswaId);
+                    namaPenyetor = foundSiswa ? foundSiswa.nama : tx.siswaId;
+                }
+
                 const params = new URLSearchParams({
                     action: 'insert',
                     id: tx.id,
                     tanggal: tx.tanggal,
                     jenis: tx.jenis,
-                    siswaId: tx.siswaId || tx.keterangan || '-',
+                    siswaId: namaPenyetor, // <-- Mengirim nama asli, bukan sandi "std-01"
                     nominal: tx.nominal,
                     keterangan: tx.keterangan || '-'
                 });
