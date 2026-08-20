@@ -262,13 +262,13 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Nominal Uang (Rp)</label>
                     <div class="relative">
                         <span class="absolute left-4 top-3 text-gray-500 font-bold">Rp</span>
-                        <input type="number" id="input-nominal" class="w-full pl-12 pr-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-semibold text-lg" placeholder="0" min="1" required>
+                        <input type="number" id="input-nominal" class="w-full pl-12 pr-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-semibold text-lg" placeholder="0" min="1">
                     </div>
                 </div>
 
                 <div class="mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Tanggal Transaksi</label>
-                    <input type="date" id="input-tanggal" class="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all cursor-pointer" required>
+                    <input type="date" id="input-tanggal" class="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all cursor-pointer">
                 </div>
 
                 <div class="flex gap-3 justify-end pt-2 border-t border-gray-100">
@@ -645,40 +645,49 @@
                 btnMasuk.className = 'flex-1 py-2 text-sm font-bold rounded-lg bg-white text-emerald-600 shadow-sm transition-all border border-gray-200/50';
                 btnKeluar.className = 'flex-1 py-2 text-sm font-semibold rounded-lg text-gray-500 hover:text-gray-700 transition-all';
                 fieldSiswa.classList.remove('hidden'); fieldKet.classList.add('hidden');
-                document.getElementById('input-siswa-id').required = true; document.getElementById('input-keterangan').required = false;
             } else {
                 btnKeluar.className = 'flex-1 py-2 text-sm font-bold rounded-lg bg-white text-red-600 shadow-sm transition-all border border-gray-200/50';
                 btnMasuk.className = 'flex-1 py-2 text-sm font-semibold rounded-lg text-gray-500 hover:text-gray-700 transition-all';
                 fieldSiswa.classList.add('hidden'); fieldKet.classList.remove('hidden');
-                document.getElementById('input-siswa-id').required = false; document.getElementById('input-keterangan').required = true;
             }
         };
 
         window.saveTransaksi = async function(e) {
             e.preventDefault();
-            if(!auth.currentUser) return Swal.fire('Error', 'Sistem gagal verifikasi keamanan.', 'error');
+            if(!auth || !auth.currentUser) return Swal.fire('Gagal', 'Sistem gagal verifikasi keamanan jaringan. Mohon muat ulang.', 'error');
             
-            const btnSave = document.getElementById('btn-save-transaksi');
-            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyimpan...';
-            btnSave.disabled = true;
-
             const jenis = document.getElementById('input-jenis').value;
-            
-            // Siapkan payload data
+            const nominalVal = document.getElementById('input-nominal').value;
+            const tanggalVal = document.getElementById('input-tanggal').value;
+
+            // Validasi manual
+            if(!nominalVal || parseInt(nominalVal) <= 0) {
+                return Swal.fire('Perhatian', 'Nominal uang harus diisi dan lebih dari 0.', 'warning');
+            }
+            if(!tanggalVal) {
+                return Swal.fire('Perhatian', 'Tanggal transaksi harus diisi.', 'warning');
+            }
+
             let txData = {
                 jenis: jenis,
-                nominal: parseInt(document.getElementById('input-nominal').value),
-                tanggal: document.getElementById('input-tanggal').value,
+                nominal: parseInt(nominalVal),
+                tanggal: tanggalVal,
                 timestamp: new Date().toISOString()
             };
 
             if(jenis === 'pemasukan') {
                 txData.siswaId = document.getElementById('input-siswa-id').value;
                 txData.keterangan = "";
+                if(!txData.siswaId) return Swal.fire('Perhatian', 'Mohon pilih nama penyetor terlebih dahulu.', 'warning');
             } else {
                 txData.keterangan = document.getElementById('input-keterangan').value.trim();
                 txData.siswaId = "";
+                if(!txData.keterangan) return Swal.fire('Perhatian', 'Keterangan atau tujuan pengeluaran harus diisi.', 'warning');
             }
+
+            const btnSave = document.getElementById('btn-save-transaksi');
+            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyimpan...';
+            btnSave.disabled = true;
 
             try {
                 // Tembak langsung ke Firebase Firestore
